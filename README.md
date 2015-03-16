@@ -23,3 +23,4 @@ The tool is devided into two scripts:
 
 # TODO:
  * discard `template.ini` from plot.py
+ * automatic installation and dependency resolver
