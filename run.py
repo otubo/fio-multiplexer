@@ -16,6 +16,13 @@ if len(sys.argv) != 3:
 nruns = int(sys.argv[1])
 config_file = str(sys.argv[2])
 
+x = 0
+sections=OrderedDict()
+average_results=OrderedDict()
+configs = []
+global_options = {}
+filenames=[]
+
 def remove_whitespace_from_assignments(config_path):
     separator = "="
     lines = file(config_path).readlines()
@@ -43,7 +50,6 @@ def parse_lines(lines):
             return out_value
 
 def create_config_file(bs, iodepth, rw, i):
-    section = "B%sI%sR" % (bs, iodepth)
     config = ConfigParser.RawConfigParser(allow_no_value=True)
     config.add_section("global")
     for opt in global_options.keys():
@@ -51,36 +57,35 @@ def create_config_file(bs, iodepth, rw, i):
             continue
         config.set("global", opt, global_options[opt])
 
+    if rw == "read":
+        section = "B%sI%sR" % (bs, iodepth)
+        op = "read"
+    elif rw == "write":
+        section = "B%sI%sW" % (bs, iodepth)
+        op = "write"
+    elif rw == "randread":
+        section = "B%sI%sR" % (bs, iodepth)
+        op = "randread"
+    elif rw == "randwrite":
+        section = "B%sI%sW" % (bs, iodepth)
+        op = "randwrite"
+
     config.add_section(section)
     config.set(section, "size", "%sk" % bs)
     config.set(section, "iodepth", iodepth)
-
-    if rw == "read":
-        config.set(section, "rw", "read")
-    elif rw == "write":
-        config.set(section, "rw", "write")
-    elif rw == "randr":
-        config.set(section, "rw", "randr")
-    elif rw == "randw":
-        config.set(section, "rw", "randw")
+    config.set(section, "rw", op)
 
     filename = "out/%s.ini" % str(i).zfill(4)
     with open(filename, 'wb') as configfile:
         config.write(configfile)
     remove_whitespace_from_assignments(filename)
 
-    return filename, section
-
+    filenames.append(filename)
+    sections[section] = []
+    average_results[section] = []
 
 c = ConfigParser.RawConfigParser(allow_no_value=True)
 c.read(config_file)
-
-x = 0
-sections=OrderedDict()
-average_results=OrderedDict()
-configs = []
-global_options = {}
-filenames=[]
 
 s = c.sections()[0]
 o = c.options(s)
@@ -96,22 +101,18 @@ i=0
 for bs in bss:
     for iodepth in iodepths:
         if global_options['rw'] == "rw":
-            filename, section = create_config_file(bs, iodepth, "read", i)
+            create_config_file(bs, iodepth, "read", i)
             i+=1
-            filename, section = create_config_file(bs, iodepth, "write", i)
+            create_config_file(bs, iodepth, "write", i)
             i+=1
         elif global_options['rw'] == "randrw":
-            filename, section = create_config_file(bs, iodepth, "randr", i)
+            create_config_file(bs, iodepth, "randread", i)
             i+=1
-            filename, section = create_config_file(bs, iodepth, "randw", i)
+            create_config_file(bs, iodepth, "randwrite", i)
             i+=1
         else:
-            filename, section = create_config_file(bs, iodepth, global_options['rw'], i)
+            create_config_file(bs, iodepth, global_options['rw'], i)
             i+=1
-
-        filenames.append(filename)
-        sections[section] = []
-        average_results[section] = []
 
 k=0
 print "Starting benchmarks runs:"
@@ -126,7 +127,10 @@ for filename in filenames:
         printn('*')
         output_lines = string.split(output, "\n")
         ret = parse_lines(output_lines)
+
+        # the following line is here just for testing purposes :)
         #ret=math.floor(random.random()*100000)
+
         if ret == -1:
             printn("!")
             continue
