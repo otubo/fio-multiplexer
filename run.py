@@ -16,13 +16,25 @@ if len(sys.argv) != 3:
 nruns = int(sys.argv[1])
 config_file = str(sys.argv[2])
 
+#
+# global variables
 x = 0
-sections=OrderedDict()
+# dictionary that is in the format:
+#   {'config_name': [list, of, results]}
+results=OrderedDict()
+# dictionary that is in the format:
+#   {'config_name': 'average for this config'}
 average_results=OrderedDict()
-configs = []
+# dictionary that holds all global options defined in the [global] section of
+# the template.ini file.
 global_options = {}
+# all the different filenames for each configuration generated
 filenames=[]
 
+# just a simple function to replace this:
+#    key = value
+# by this:
+#    key=value
 def remove_whitespace_from_assignments(config_path):
     separator = "="
     lines = file(config_path).readlines()
@@ -36,10 +48,12 @@ def remove_whitespace_from_assignments(config_path):
         else:
             fp.write(line + "\n")
 
+# inline characters like "echo -n"
 def printn (str):
     sys.stdout.write(str)
     sys.stdout.flush()
 
+# parse lines from `fio' command and return iops value
 def parse_lines(lines):
     for line in lines:
         if re.match("(.*)iops=(.*)", line):
@@ -49,6 +63,10 @@ def parse_lines(lines):
                 return -1
             return out_value
 
+# create a new configuration file in the for "out/000%d.ini" for each
+# configuration generated. Also appends the new filename to the array
+# filenames, declares a new empty array in the dictionary 'results'
+# and a new empty array to average_results dictionary.
 def create_config_file(bs, iodepth, rw, i):
     config = ConfigParser.RawConfigParser(allow_no_value=True)
     config.add_section("global")
@@ -81,22 +99,26 @@ def create_config_file(bs, iodepth, rw, i):
     remove_whitespace_from_assignments(filename)
 
     filenames.append(filename)
-    sections[section] = []
+    results[section] = []
     average_results[section] = []
 
+# open template.ini, grab all global options and transform the list of block
+# sizes and iodepths into interable arrays
 c = ConfigParser.RawConfigParser(allow_no_value=True)
 c.read(config_file)
-
 s = c.sections()[0]
 o = c.options(s)
 for opt in o:
     value = c.get(s, opt)
     global_options[opt] = value
-
 bss = global_options['bs'].split(' ')
 iodepths = global_options['iodepth'].split(' ')
+
+# clean up old config files if there's any
 shutil.rmtree("out/", ignore_errors=True)
 os.mkdir("out")
+
+# create config files
 i=0
 for bs in bss:
     for iodepth in iodepths:
@@ -118,30 +140,37 @@ k=0
 print "Starting benchmarks runs:"
 for filename in filenames:
     i=0
-    printn(sections.keys()[k])
+    printn(results.keys()[k])
     while i < nruns:
-        subprocess.call("rm -f ../disk_test/*.0", shell=True)
-        p1 = subprocess.Popen(["fio", filename], stdout=subprocess.PIPE)
-        output = p1.stdout.read()
-        p1.stdout.close()
-        printn('*')
-        output_lines = string.split(output, "\n")
-        ret = parse_lines(output_lines)
+        # TODO: change this to a non hard-coded path
+        #subprocess.call("rm -f ../disk_test/*.0", shell=True)
+        #p1 = subprocess.Popen(["fio", filename], stdout=subprocess.PIPE)
+        #output = p1.stdout.read()
+        #p1.stdout.close()
+        #printn('*')
+        #output_lines = string.split(output, "\n")
+        #ret = parse_lines(output_lines)
 
         # the following line is here just for testing purposes :)
-        #ret=math.floor(random.random()*100000)
+        ret=math.floor(random.random()*100000)
 
         if ret == -1:
             printn("!")
             continue
         else:
-            sections[sections.keys()[k]].append(int(ret))
+            results[results.keys()[k]].append(int(ret))
         printn("*")
         i+=1
     print "DONE"
-    average_results[sections.keys()[k]].append(int(math.floor(sum(sections[sections.keys()[k]])/float(len(sections[sections.keys()[k]])))))
+    # calculate the floor of the average and append to average_results
+    # dictionary
+    average_results[results.keys()[k]].append(
+            int(math.floor(sum(results[results.keys()[k]])/
+                float(len(results[results.keys()[k]])))))
     k+=1
 
+# TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
+# reason, the script breaks and all the previous results are lost :/
 writer = csv.writer(open('results.csv', 'wb'))
 for key, value in average_results.items():
        writer.writerow([key, value])

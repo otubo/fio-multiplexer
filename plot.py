@@ -13,6 +13,8 @@ results_file0 = sys.argv[1]
 results_file1 = sys.argv[2]
 config_file = sys.argv[3]
 
+# open template.ini, grab all global options and transform the list of block
+# sizes and iodepths into interable arrays
 global_options = {}
 c = ConfigParser.RawConfigParser(allow_no_value=True)
 c.read(config_file)
@@ -24,25 +26,32 @@ for opt in o:
     global_options[opt] = value
 bss = global_options['bs'].split(' ')
 iodepths = global_options['iodepth'].split(' ')
+
+# generate all possible configurations from template.ini
 for bs in bss:
     for iodepth in iodepths:
-        if global_options['rw'] == "rw" or global_options['rw'] == "randrw":
+        if ( global_options['rw'] == "rw" or
+                global_options['rw'] == "randrw"):
             config.append("B%sI%sR" % (bs, iodepth))
-            config.append("B%sI%sW" % (bs, iodepth))
-        elif global_options['rw'] == "read" or global_options['rw'] == "randread":
-            config.append("B%sI%sR" % (bs, iodepth))
-        elif global_options['rw'] == "write" or global_options['rw'] == "randwrite":
             config.append("B%sI%sW" % (bs, iodepth))
 
+        elif (global_options['rw'] == "read" or
+                global_options['rw'] == "randread"):
+            config.append("B%sI%sR" % (bs, iodepth))
+
+        elif (global_options['rw'] == "write" or
+                global_options['rw'] == "randwrite"):
+            config.append("B%sI%sW" % (bs, iodepth))
+
+# open and read both csv result files
 reader = csv.reader(open(results_file0, 'rb'))
 results0 = dict(x for x in reader)
-
 reader = csv.reader(open(results_file1, 'rb'))
 results1 = dict(x for x in reader)
-
 ordered_result0 = []
 ordered_result1 = []
 
+# remove '[' and ']' from results and append to results Array
 for c in config:
     value0 = results0[c].replace("[", "")
     value0 = value0.replace("]", "")
@@ -51,6 +60,7 @@ for c in config:
     ordered_result0.append(int(value0))
     ordered_result1.append(int(value1))
 
+# graph stuff
 N = len(config)
 ind = np.arange(N)
 width = 0.35
