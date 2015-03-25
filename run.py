@@ -8,6 +8,7 @@ import os, shutil
 import random, math
 import csv
 from collections import OrderedDict
+import datetime
 
 if len(sys.argv) != 3:
     print "usage: " + str(sys.argv[0]) + " <nruns> <template.ini>"
@@ -15,6 +16,8 @@ if len(sys.argv) != 3:
 
 nruns = int(sys.argv[1])
 config_file = str(sys.argv[2])
+
+timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M")
 
 #
 # global variables
@@ -53,11 +56,22 @@ def printn (str):
     sys.stdout.write(str)
     sys.stdout.flush()
 
-# parse lines from `fio' command and return iops value
-def parse_lines(lines):
+# parse lines from `fio' command output and return 'opt's value
+def parse_lines(lines, opt):
+    if opt == "cpu":
+        opt="sys"
+        regex_strip_value="(%s=[0-9]+[\.][0-9+]%)" % cpu
+    elif opt == "lat":
+        regex_strip_value="(avg=[0-9]+[\.][0-9+])"
+    elif opt == "bw":
+        regex_strip_value="(%s=[0-9]+KB/s)" % opt
+    else:
+        regex="(.*)%s=(.*)" % opt
+        regex_strip_value="(%s=[0-9]+)" % opt
+
     for line in lines:
-        if re.match("(.*)iops=(.*)", line):
-            out=re.split("(iops=[0-9]+)", line)[1]
+        if re.match(regex, line):
+            out=re.split(regex_strip_value, line)[1]
             out_value=string.split(out, "=")[1]
             if out_value == "":
                 return -1
@@ -149,7 +163,7 @@ for filename in filenames:
         #p1.stdout.close()
         #printn('*')
         #output_lines = string.split(output, "\n")
-        #ret = parse_lines(output_lines)
+        #ret = parse_lines(output_lines, "iops")
 
         # the following line is here just for testing purposes :)
         ret=math.floor(random.random()*100000)
@@ -171,6 +185,6 @@ for filename in filenames:
 
 # TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
 # reason, the script breaks and all the previous results are lost :/
-writer = csv.writer(open('results.csv', 'wb'))
+writer = csv.writer(open('%s.csv' % timestamp, 'wb'))
 for key, value in average_results.items():
        writer.writerow([key, value])
