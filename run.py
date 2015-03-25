@@ -64,16 +64,17 @@ def printn (str):
 
 # parse lines from `fio' command output and return 'opt's value
 def parse_lines(lines, opt):
+    regex="(.*)%s=(.*)" % opt
+    regex_strip_value="(%s=[0-9]+)" % opt
+
     if opt == "cpu":
-        opt="sys"
-        regex_strip_value="(%s=[0-9]+[\.][0-9+]%)" % cpu
+        regex="(.*)sys=(.*)"
+        regex_strip_value="(sys=[0-9]+.[0-9]+)"
     elif opt == "lat":
-        regex_strip_value="(avg=[0-9]+[\.][0-9+])"
+        regex="\s+%s(.*)" % opt
+        regex_strip_value="(avg=[0-9]+[\.][0-9]+)"
     elif opt == "bw":
         regex_strip_value="(%s=[0-9]+KB/s)" % opt
-    else:
-        regex="(.*)%s=(.*)" % opt
-        regex_strip_value="(%s=[0-9]+)" % opt
 
     for line in lines:
         if re.match(regex, line):
@@ -81,6 +82,8 @@ def parse_lines(lines, opt):
             out_value=string.split(out, "=")[1]
             if out_value == "":
                 return -1
+            out_value=re.sub(r'[^\w]', '', out_value)
+            out_value=re.sub(r'KBs', '', out_value)
             return out_value
 
 # create a new configuration file in the for "out/000%d.ini" for each
@@ -175,7 +178,10 @@ for filename in filenames:
         #p1.stdout.close()
         #printn('*')
         #output_lines = string.split(output, "\n")
-        #ret = parse_lines(output_lines, "iops")
+        #ret_iops = parse_lines(output_lines, "iops")
+        #ret_bw = parse_lines(output_lines, "bw")
+        #ret_lat = parse_lines(output_lines, "lat")
+        #ret_cpu = parse_lines(output_lines, "cpu")
 
         # the following line is here just for testing purposes :)
         ret_iops=math.floor(random.random()*100000)
