@@ -9,15 +9,14 @@ import random, math
 import csv
 from collections import OrderedDict
 import datetime
+import getopt
+import paramiko
+import time
 
-if len(sys.argv) != 3:
-    print "usage: " + str(sys.argv[0]) + " <nruns> <template.ini>"
-    sys.exit(1)
+vms_file = None
+template_file = None
 
-nruns = int(sys.argv[1])
-config_file = str(sys.argv[2])
-
-timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M")
+timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
 #
 # global variables
@@ -39,6 +38,11 @@ average_cpu=OrderedDict()
 global_options = {}
 # all the different filenames for each configuration generated
 filenames=[]
+# block sizes and iodepth arrays
+bss = 0
+iodepths = 0
+# main array to hold all VM definitions
+vms = {}
 
 # just a simple function to replace this:
 #    key = value
@@ -90,11 +94,19 @@ def parse_lines(lines, opt):
 # configuration generated. Also appends the new filename to the array
 # filenames, declares a new empty array in the dictionary 'iops'
 # and a new empty array to average_iops dictionary.
-def create_config_file(bs, iodepth, rw, i):
+def create_one_job(bs, iodepth, rw, i):
+    global iops
+    global bw
+    global lat
+    global cpu
+    global average_iops
+    global average_bw
+    global average_lat
+    global average_cpu
     config = ConfigParser.RawConfigParser(allow_no_value=True)
     config.add_section("global")
     for opt in global_options.keys():
-        if opt == "bs" or opt == "iodepth" or opt == "rw":
+        if opt == "bs" or opt == "iodepth" or opt == "rw" or opt == "number_of_runs":
             continue
         config.set("global", opt, global_options[opt])
 
@@ -133,106 +145,260 @@ def create_config_file(bs, iodepth, rw, i):
 
 # open template.ini, grab all global options and transform the list of block
 # sizes and iodepths into interable arrays
-c = ConfigParser.RawConfigParser(allow_no_value=True)
-c.read(config_file)
-s = c.sections()[0]
-o = c.options(s)
-for opt in o:
-    value = c.get(s, opt)
-    global_options[opt] = value
-bss = global_options['bs'].split(' ')
-iodepths = global_options['iodepth'].split(' ')
+def parse_template(template):
+    global global_options
+    global bss
+    global iodepths
 
-# clean up old config files if there's any
-shutil.rmtree("out/", ignore_errors=True)
-os.mkdir("out")
+    config = ConfigParser.RawConfigParser(allow_no_value=True)
+    config.read(template_file)
+    global_section = config.sections()[0]
+    options = config.options(global_section)
+    for option in options:
+        value = config.get(global_section, option)
+        global_options[option] = value
+    bss = global_options['bs'].split(' ')
+    iodepths = global_options['iodepth'].split(' ')
 
-# create config files
-i=0
-for bs in bss:
-    for iodepth in iodepths:
-        if global_options['rw'] == "rw":
-            create_config_file(bs, iodepth, "read", i)
-            i+=1
-            create_config_file(bs, iodepth, "write", i)
-            i+=1
-        elif global_options['rw'] == "randrw":
-            create_config_file(bs, iodepth, "randread", i)
-            i+=1
-            create_config_file(bs, iodepth, "randwrite", i)
-            i+=1
-        else:
-            create_config_file(bs, iodepth, global_options['rw'], i)
-            i+=1
+def parse_vms(vms_file):
+    global vms
 
-k=0
-print "Starting benchmarks runs:"
-for filename in filenames:
     i=0
-    printn(iops.keys()[k])
-    while i < nruns:
-        # TODO: change this to a non hard-coded path
-        #subprocess.call("rm -f ../disk_test/*.0", shell=True)
-        #p1 = subprocess.Popen(["fio", filename], stdout=subprocess.PIPE)
-        #output = p1.stdout.read()
-        #p1.stdout.close()
-        #printn('*')
-        #output_lines = string.split(output, "\n")
-        #ret_iops = parse_lines(output_lines, "iops")
-        #ret_bw = parse_lines(output_lines, "bw")
-        #ret_lat = parse_lines(output_lines, "lat")
-        #ret_cpu = parse_lines(output_lines, "cpu")
-
-        # the following line is here just for testing purposes :)
-        ret_iops=math.floor(random.random()*100000)
-        ret_bw=math.floor(random.random()*100000)
-        ret_lat=math.floor(random.random()*100000)
-        ret_cpu=math.floor(random.random()*100000)
-
-        if ret_iops == -1 or ret_bw == -1 or ret_lat == -1 or ret_cpu == -1:
-            printn("!")
-            continue
-        else:
-            iops[iops.keys()[k]].append(int(ret_iops))
-            bw[bw.keys()[k]].append(int(ret_bw))
-            lat[lat.keys()[k]].append(int(ret_lat))
-            cpu[cpu.keys()[k]].append(int(ret_cpu))
-        printn("*")
+    config = ConfigParser.RawConfigParser(allow_no_value=True)
+    config.read(vms_file)
+    for section in config.sections():
+        vms[section] = {}
+        options = config.options(section)
+        vms[section]['id'] = i
+        vms[section]['name'] = section
+        for option in options:
+            vms[section][option] = config.get(section, option)
         i+=1
-    print "DONE"
-    # calculate the floor of the average and append to average_iops
-    # dictionary
-    average_iops[iops.keys()[k]].append(
-            int(math.floor(sum(iops[iops.keys()[k]])/
-                float(len(iops[iops.keys()[k]])))))
 
-    average_bw[bw.keys()[k]].append(
-            int(math.floor(sum(bw[bw.keys()[k]])/
-                float(len(bw[bw.keys()[k]])))))
+def cleanup_old_config():
+    # clean up old config files if there's any
+    shutil.rmtree("out/", ignore_errors=True)
+    os.mkdir("out")
 
-    average_lat[lat.keys()[k]].append(
-            int(math.floor(sum(lat[lat.keys()[k]])/
-                float(len(lat[lat.keys()[k]])))))
+def create_all_jobs(bss, iodepths):
+    # create config files
+    i=0
+    for bs in bss:
+        for iodepth in iodepths:
+            if global_options['rw'] == "rw":
+                create_one_job(bs, iodepth, "read", i)
+                i+=1
+                create_one_job(bs, iodepth, "write", i)
+                i+=1
+            elif global_options['rw'] == "randrw":
+                create_one_job(bs, iodepth, "randread", i)
+                i+=1
+                create_one_job(bs, iodepth, "randwrite", i)
+                i+=1
+            else:
+                create_one_job(bs, iodepth, global_options['rw'], i)
+                i+=1
 
-    average_cpu[cpu.keys()[k]].append(
-            int(math.floor(sum(cpu[cpu.keys()[k]])/
-                float(len(cpu[cpu.keys()[k]])))))
-    k+=1
+def spawn_virtual_machine(vm):
+    return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'], vm['external_disk'], vm['iothreads'], str(vm['id'])])
 
-# TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
-# reason, the script breaks and all the previous iops are lost :/
-writer_iops = csv.writer(open('%s_iops.csv' % timestamp, 'wb'))
-for key, value in average_iops.items():
-       writer_iops.writerow([key, value])
+def scp_job_files(vm):
+    while True:
+        try:
+            t = paramiko.Transport(('localhost', 5000+int(vm['id'])))
+        except paramiko.SSHException:
+            #SSH not available yet, sleep and retry
+            time.sleep(5)
+            continue
+        break
 
-writer_bw = csv.writer(open('%s_bw.csv' % timestamp, 'wb'))
-for key, value in average_bw.items():
-       writer_bw.writerow([key, value])
+    t.connect(username=vm['user'], password=vm['password'])
+    sftp = paramiko.SFTPClient.from_transport(t)
+    try:
+        sftp.remove("/tmp/out/*")
+        sftp.rmdir("/tmp/out")
+    except IOError:
+        pass
 
-writer_lat = csv.writer(open('%s_lat.csv' % timestamp, 'wb'))
-for key, value in average_lat.items():
-       writer_lat.writerow([key, value])
+    sftp.mkdir("/tmp/out")
 
-writer_cpu = csv.writer(open('%s_cpu.csv' % timestamp, 'wb'))
-for key, value in average_cpu.items():
-       writer_cpu.writerow([key, value])
+    for filename in filenames:
+        sftp.put(filename, "/tmp/%s" % filename)
+
+    sftp.close()
+    t.close()
+
+def stop_vm(vm):
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    stdin , stdout, stderr = c.exec_command("shutdown -h now")
+    c.close()
+
+def stop_all_vms(vms):
+    for vm in vms:
+        stop_vm(vms[vm])
+
+def mount_testing_device(vm):
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    stdin , stdout, stderr = c.exec_command("ls /dev/disk/by-uuid")
+    disk_list = stdout.read().replace("\n", " ").split(" ")
+    del disk_list[-1]
+    for disk in disk_list:
+        cmd = "mount|grep %s" % disk
+        stdin, stdout, stderr = c.exec_command(cmd)
+        if not stdout.read() and not stderr.read():
+            cmd = "mount /dev/disk/by-uuid/%s %s" % (disk, global_options['directory'])
+            stdin, stdout, stderr = c.exec_command(cmd)
+
+    c.close()
+
+def start_jobs(vm, nruns):
+    global iops
+    global bw
+    global lat
+    global cpu
+    global average_iops
+    global average_bw
+    global average_lat
+    global average_cpu
+
+    local_iops = iops
+    local_bw = bw
+    local_lat = lat
+    local_cpu = cpu
+    local_average_iops = average_iops
+    local_average_bw = average_bw
+    local_average_lat = average_lat
+    local_average_cpu = average_cpu
+
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    k=0
+    for filename in filenames:
+        i=0
+        printn(local_iops.keys()[k])
+        while int(i) < int(nruns):
+            # TODO: change this to a non hard-coded path
+            stdin, stdout, stderr = c.exec_command("fio /tmp/%s" % filename)
+            output = stdout.read()
+            output_lines = string.split(output, "\n")
+            ret_iops = parse_lines(output_lines, "iops")
+            ret_bw = parse_lines(output_lines, "bw")
+            ret_lat = parse_lines(output_lines, "lat")
+            ret_cpu = parse_lines(output_lines, "cpu")
+
+            # the following line is here just for testing purposes :)
+            #ret_iops=math.floor(random.random()*100000)
+            #ret_bw=math.floor(random.random()*100000)
+            #ret_lat=math.floor(random.random()*100000)
+            #ret_cpu=math.floor(random.random()*100000)
+
+            if ret_iops == -1 or ret_bw == -1 or ret_lat == -1 or ret_cpu == -1:
+                printn("!")
+                continue
+            else:
+                local_iops[local_iops.keys()[k]].append(int(ret_iops))
+                local_bw[local_bw.keys()[k]].append(int(ret_bw))
+                local_lat[local_lat.keys()[k]].append(int(ret_lat))
+                local_cpu[local_cpu.keys()[k]].append(int(ret_cpu))
+            printn("*")
+            i+=1
+
+        print "DONE"
+        # calculate the floor of the average and append to average_iops
+        # dictionary
+        local_average_iops[local_iops.keys()[k]].append(
+                int(math.floor(sum(local_iops[local_iops.keys()[k]])/
+                    float(len(local_iops[local_iops.keys()[k]])))))
+
+        local_average_bw[local_bw.keys()[k]].append(
+                int(math.floor(sum(local_bw[local_bw.keys()[k]])/
+                    float(len(local_bw[local_bw.keys()[k]])))))
+
+        local_average_lat[local_lat.keys()[k]].append(
+                int(math.floor(sum(local_lat[local_lat.keys()[k]])/
+                    float(len(local_lat[local_lat.keys()[k]])))))
+
+        local_average_cpu[local_cpu.keys()[k]].append(
+                int(math.floor(sum(local_cpu[local_cpu.keys()[k]])/
+                    float(len(local_cpu[local_cpu.keys()[k]])))))
+        k+=1
+    c.close()
+
+    # TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
+    # reason, the script breaks and all the previous iops are lost :/
+    if int(vm['iothreads']) == 1:
+        result_folder_name = "%s_%s_iothreads" % (timestamp, vm['name'])
+    else:
+        result_folder_name = "%s_%s_virtio-blk" % (timestamp, vm['name'])
+    os.mkdir(result_folder_name)
+
+    writer_iops = csv.writer(open('%s/iops.csv' % result_folder_name, 'wb'))
+    for key, value in local_average_iops.items():
+           writer_iops.writerow([key, value])
+
+    writer_bw = csv.writer(open('%s/bw.csv' % result_folder_name, 'wb'))
+    for key, value in local_average_bw.items():
+           writer_bw.writerow([key, value])
+
+    writer_lat = csv.writer(open('%s/lat.csv' % result_folder_name, 'wb'))
+    for key, value in local_average_lat.items():
+           writer_lat.writerow([key, value])
+
+    writer_cpu = csv.writer(open('%s/cpu.csv' % result_folder_name, 'wb'))
+    for key, value in local_average_cpu.items():
+           writer_cpu.writerow([key, value])
+
+    stop_vm(vm)
+
+def main():
+    # parse command line options
+    global template_file
+    global vms_file
+    global vms
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "hv:t:", ["help", "vms=", "template="])
+    except getopt.error, msg:
+        print msg
+        print "for help use --help"
+        return 2
+    # process options
+    for o, a in opts:
+        if o in ("-h", "--help"):
+            print __doc__
+            return 0
+        elif o in ("-v", "--vms"):
+            vms_file=a
+        elif o in ("-t", "--template"):
+            template_file=a
+
+    #if nothing is set, go back to default
+    if template_file == None:
+        template_file = "template.ini"
+
+    if vms_file == None:
+        vms_file = "vms.ini"
+
+    parse_template(template_file)
+    parse_vms(vms_file)
+    cleanup_old_config()
+    create_all_jobs(bss, iodepths)
+
+    for vm in vms:
+        spawn_virtual_machine(vms[vm])
+        scp_job_files(vms[vm])
+        mount_testing_device(vms[vm])
+
+    #everything is set, start `fio'
+    for vm in vms:
+        start_jobs(vms[vm], global_options['number_of_runs'])
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
