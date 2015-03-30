@@ -63,6 +63,16 @@ def printn (str):
     sys.stdout.write(str)
     sys.stdout.flush()
 
+# print information back to user depending on how much verbosity is set
+# info_type can be:
+#   I: Info
+#   W: Warning
+#   E: Error
+#   V: Verbose
+def print_verbose(info_type, string):
+    # TODO: add logic to add more information depending on verbosity config
+    print "[%s] %s" % (info_type, string)
+
 # parse lines from `fio' command output and return 'opt's value
 def parse_lines(lines, opt):
     regex="(.*)%s=(.*)" % opt
@@ -105,8 +115,8 @@ def create_one_job(bs, iodepth, rw, i):
 
     # skip these options, we're gonna get them later
     for opt in global_options.keys():
-        if opt == "bs" or opt == "iodepth"
-        or opt == "rw" or opt == "number_of_runs":
+        if opt == "bs" or opt == "iodepth" or \
+            opt == "rw" or opt == "number_of_runs":
             continue
         config.set("global", opt, global_options[opt])
 
@@ -151,6 +161,7 @@ def create_one_job(bs, iodepth, rw, i):
 # open template.ini, grab all global options and transform the list of block
 # sizes and iodepths into interable arrays
 def parse_template(template):
+    print_verbose("V", "parsing template.ini")
     global global_options
     global bss
     global iodepths
@@ -167,6 +178,7 @@ def parse_template(template):
 
 # open vms.ini and parse all configuration options for each vm declared
 def parse_vms(vms_file):
+    print_verbose("V", "parsing vms.ini")
     global vms
 
     i=0
@@ -183,10 +195,14 @@ def parse_vms(vms_file):
 
 def cleanup_old_config():
     # clean up old config files if there's any
+    print_verbose("V", "cleaning up old configuration")
+    print_verbose("V", "removing out/")
     shutil.rmtree("out/", ignore_errors=True)
+    print_verbose("V", "creating new out/")
     os.mkdir("out")
 
 def create_all_jobs(bss, iodepths):
+    print_verbose("V", "creating all new job files inside out/")
     # create config files
     i=0
     for bs in bss:
@@ -206,16 +222,19 @@ def create_all_jobs(bss, iodepths):
                 i+=1
 
 def spawn_virtual_machine(vm):
+    print_verbose("I", "spawning new virtual machine id: %d" % vm['id'])
     return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'],
         vm['external_disk'], vm['iothreads'], str(vm['id'])])
 
 def scp_job_files(vm):
+    print_verbose("I", "copying all job files to virtual machine %d" % vm['id'])
     while True:
         try:
             t = paramiko.Transport(('localhost', 5000+int(vm['id'])))
         except paramiko.SSHException:
             # SSH not available yet, it means the virtual machine is not
             # up yet, sleep 5 and retry
+            print_verbose("W", "scp failed, perhaps virtual machine is not up yet, sleep 5 and try again...")
             time.sleep(5)
             continue
         break
@@ -261,6 +280,8 @@ def mount_testing_device(vm):
         cmd = "mount|grep %s" % disk
         stdin, stdout, stderr = c.exec_command(cmd)
         if not stdout.read() and not stderr.read():
+            print_verbose("V", "mounting device %s on %s inside virtual machine %d"
+                    % (disk,global_options['directory'], vm['id']))
             cmd = "mount /dev/disk/by-uuid/%s %s" % (disk,
                     global_options['directory'])
             stdin, stdout, stderr = c.exec_command(cmd)
@@ -268,6 +289,7 @@ def mount_testing_device(vm):
     c.close()
 
 def start_jobs(vm, nruns):
+    print_verbose("I", "starting jobs on virtual machine %d" % vm['id'])
     global iops
     global bw
     global lat
@@ -397,9 +419,11 @@ def main():
 
     #if nothing is set, go back to default
     if template_file == None:
+        print_verbose("I", "No configuration given, using default template.ini")
         template_file = "template.ini"
 
     if vms_file == None:
+        print_verbose("I", "No configuration given, using default vms.ini")
         vms_file = "vms.ini"
 
     parse_template(template_file)
