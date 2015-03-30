@@ -1,4 +1,13 @@
 #!/usr/bin/python
+"""fio-multiplexer tool
+
+Usage: ./run.py [[-c|--config=] <config.ini>] [[-v|--vms=] <vms.ini>] [-h|--help]
+    -c|--config         configuration file that will be used as base for
+                        fio tool
+    -v|--vms            configuration file that describes every virtual
+                        machine setup that will be envolved on the run
+    -h|--help           displays this help message
+"""
 import subprocess
 import sys
 import re
@@ -19,12 +28,12 @@ config_file = None
 timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
 # XXX: convention for this code:
-#      * config.ini: the template configuration file that will be used as 
+#      * config.ini: the template configuration file that will be used as
 #        base for all the separate job files placed inside out/
 #      * vms.ini: configuration file that holds the definition for all
 #        different virtual machines that will run in parallel
-#      * job file: every file inside out/ folder that represents very 
-#        test-case generated, that will serve as input for `fio' tool 
+#      * job file: every file inside out/ folder that represents very
+#        test-case generated, that will serve as input for `fio' tool
 #        inside the virtual machine
 
 # dictionary that is in the format:

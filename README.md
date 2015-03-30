@@ -7,13 +7,21 @@ different Qemu configurations and find the best one.
 # Run Stress Benchmarks
 The tool is devided into two scripts:
 
-1. `./run.py <number of runs> <template.ini>`
- * `number of runs`: fio will run as many times as specified on this argument
- * `template.ini`: fio will take `template.ini` as a base for all the runs
-   except for two configurations, that are not written as standard fio option,
-   but special for the script to understand the ranges:
+1. Usage:
+ * `Usage: ./run.py [[-c|--config=] <config.ini>] [[-v|--vms=] <vms.ini>] [-h|--help]
+    -c|--config         configuration file that will be used as base for
+                        fio tool
+    -v|--vms            configuration file that describes every virtual
+                        machine setup that will be envolved on the run
+    -h|--help           displays this help message`
+
+1. Arguments:
+ * `config.ini`: fio will take `config.ini` as a base for all the runs
+   except for three configurations, that are not written as standard fio option,
+   but special for the script:
     * `bs=4 8 16 32 64 128 256 512`
     * `iodepth=1 2 4 8 16 32 64 128 512`
+    * `number_of_runs=10`
  * The script outputs a CSV file with an average for each separate test.
 
 1. `./plot.py <first_result.csv> <second_result.csv> <template.ini>`
