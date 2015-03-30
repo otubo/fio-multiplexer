@@ -18,11 +18,8 @@ template_file = None
 
 timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-#
-# global variables
-x = 0
 # dictionary that is in the format:
-#   {'config_name': [list, of, iops]}
+#   {'config_name': [list, of, values]}
 iops=OrderedDict()
 bw=OrderedDict()
 lat=OrderedDict()
@@ -90,10 +87,10 @@ def parse_lines(lines, opt):
             out_value=re.sub(r'KBs', '', out_value)
             return out_value
 
-# create a new configuration file in the for "out/000%d.ini" for each
+# create a new configuration file in the format "out/000%d.ini" for each
 # configuration generated. Also appends the new filename to the array
-# filenames, declares a new empty array in the dictionary 'iops'
-# and a new empty array to average_iops dictionary.
+# filenames, declares a new empty array in the dictionary of values and a new
+# empty array to average_XXX_dictionary.
 def create_one_job(bs, iodepth, rw, i):
     global iops
     global bw
@@ -105,8 +102,11 @@ def create_one_job(bs, iodepth, rw, i):
     global average_cpu
     config = ConfigParser.RawConfigParser(allow_no_value=True)
     config.add_section("global")
+
+    # skip these options, we're gonna get them later
     for opt in global_options.keys():
-        if opt == "bs" or opt == "iodepth" or opt == "rw" or opt == "number_of_runs":
+        if opt == "bs" or opt == "iodepth"
+        or opt == "rw" or opt == "number_of_runs":
             continue
         config.set("global", opt, global_options[opt])
 
@@ -133,11 +133,16 @@ def create_one_job(bs, iodepth, rw, i):
         config.write(configfile)
     remove_whitespace_from_assignments(filename)
 
+    # update filenames array
     filenames.append(filename)
+
+    # create new array in the dictionary of values
     iops[section] = []
     bw[section] = []
     lat[section] = []
     cpu[section] = []
+
+    # create new array on the average dictionary
     average_iops[section] = []
     average_bw[section] = []
     average_lat[section] = []
@@ -160,6 +165,7 @@ def parse_template(template):
     bss = global_options['bs'].split(' ')
     iodepths = global_options['iodepth'].split(' ')
 
+# open vms.ini and parse all configuration options for each vm declared
 def parse_vms(vms_file):
     global vms
 
@@ -200,14 +206,16 @@ def create_all_jobs(bss, iodepths):
                 i+=1
 
 def spawn_virtual_machine(vm):
-    return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'], vm['external_disk'], vm['iothreads'], str(vm['id'])])
+    return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'],
+        vm['external_disk'], vm['iothreads'], str(vm['id'])])
 
 def scp_job_files(vm):
     while True:
         try:
             t = paramiko.Transport(('localhost', 5000+int(vm['id'])))
         except paramiko.SSHException:
-            #SSH not available yet, sleep and retry
+            # SSH not available yet, it means the virtual machine is not
+            # up yet, sleep 5 and retry
             time.sleep(5)
             continue
         break
@@ -215,6 +223,7 @@ def scp_job_files(vm):
     t.connect(username=vm['user'], password=vm['password'])
     sftp = paramiko.SFTPClient.from_transport(t)
     try:
+        # XXX this should be inside cleanup_old_config
         sftp.remove("/tmp/out/*")
         sftp.rmdir("/tmp/out")
     except IOError:
@@ -231,7 +240,8 @@ def scp_job_files(vm):
 def stop_vm(vm):
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'],
+            password=vm['password'], allow_agent=False, look_for_keys=False)
     stdin , stdout, stderr = c.exec_command("shutdown -h now")
     c.close()
 
@@ -242,7 +252,8 @@ def stop_all_vms(vms):
 def mount_testing_device(vm):
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'],
+            password=vm['password'], allow_agent=False, look_for_keys=False)
     stdin , stdout, stderr = c.exec_command("ls /dev/disk/by-uuid")
     disk_list = stdout.read().replace("\n", " ").split(" ")
     del disk_list[-1]
@@ -250,7 +261,8 @@ def mount_testing_device(vm):
         cmd = "mount|grep %s" % disk
         stdin, stdout, stderr = c.exec_command(cmd)
         if not stdout.read() and not stderr.read():
-            cmd = "mount /dev/disk/by-uuid/%s %s" % (disk, global_options['directory'])
+            cmd = "mount /dev/disk/by-uuid/%s %s" % (disk,
+                    global_options['directory'])
             stdin, stdout, stderr = c.exec_command(cmd)
 
     c.close()
@@ -276,7 +288,8 @@ def start_jobs(vm, nruns):
 
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'], password=vm['password'], allow_agent=False, look_for_keys=False)
+    c.connect('localhost', port=5000+int(vm['id']), username=vm['user'],
+            password=vm['password'], allow_agent=False, look_for_keys=False)
     k=0
     for filename in filenames:
         i=0
@@ -311,6 +324,9 @@ def start_jobs(vm, nruns):
         print "DONE"
         # calculate the floor of the average and append to average_iops
         # dictionary
+        # XXX too many things duplicated
+        # XXX This piece of code is barely readable the way it is right now,
+        # some change would be nice
         local_average_iops[local_iops.keys()[k]].append(
                 int(math.floor(sum(local_iops[local_iops.keys()[k]])/
                     float(len(local_iops[local_iops.keys()[k]])))))
@@ -331,6 +347,7 @@ def start_jobs(vm, nruns):
 
     # TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
     # reason, the script breaks and all the previous iops are lost :/
+    # XXX: too manu things duplicated
     if int(vm['iothreads']) == 1:
         result_folder_name = "%s_%s_iothreads" % (timestamp, vm['name'])
     else:
@@ -362,7 +379,8 @@ def main():
     global vms
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hv:t:", ["help", "vms=", "template="])
+        opts, args = getopt.getopt(sys.argv[1:], "hv:t:", ["help", "vms=",
+            "template="])
     except getopt.error, msg:
         print msg
         print "for help use --help"
