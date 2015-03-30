@@ -157,7 +157,8 @@ def main():
 
     parse_config(config_file)
 
-    graphs_folder_name = "%s__%s" % (folder0, folder1)
+    graphs_folder_name = "logs/%s__%s" % (folder0.replace("logs/", ""),
+            folder1.replace("logs/", ""))
     shutil.rmtree(graphs_folder_name, ignore_errors=True)
     os.mkdir(graphs_folder_name)
 

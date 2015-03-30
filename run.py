@@ -393,9 +393,12 @@ def start_jobs(vm, nruns):
     # reason, the script breaks and all the previous iops are lost :/
     # XXX: too manu things duplicated
     if int(vm['iothreads']) == 1:
-        result_folder_name = "%s_%s_iothreads" % (timestamp, vm['name'])
+        result_folder_name = "logs/%s_%s_iothreads" % (timestamp, vm['name'])
     else:
-        result_folder_name = "%s_%s_virtio-blk" % (timestamp, vm['name'])
+        result_folder_name = "logs/%s_%s_virtio-blk" % (timestamp, vm['name'])
+
+    if not os.path.isdir("logs/"):
+        os.mkdir("logs")
     os.mkdir(result_folder_name)
 
     writer_iops = csv.writer(open('%s/iops.csv' % result_folder_name, 'wb'))
