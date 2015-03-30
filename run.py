@@ -14,18 +14,27 @@ import paramiko
 import time
 
 vms_file = None
-template_file = None
+config_file = None
 
 timestamp=datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
+# XXX: convention for this code:
+#      * config.ini: the template configuration file that will be used as 
+#        base for all the separate job files placed inside out/
+#      * vms.ini: configuration file that holds the definition for all
+#        different virtual machines that will run in parallel
+#      * job file: every file inside out/ folder that represents very 
+#        test-case generated, that will serve as input for `fio' tool 
+#        inside the virtual machine
+
 # dictionary that is in the format:
-#   {'config_name': [list, of, values]}
+#   {'test_name': [list, of, values]}
 iops=OrderedDict()
 bw=OrderedDict()
 lat=OrderedDict()
 cpu=OrderedDict()
 # dictionary that is in the format:
-#   {'config_name': 'average for this config'}
+#   {'test_name': 'average for this test'}
 average_iops=OrderedDict()
 average_bw=OrderedDict()
 average_lat=OrderedDict()
@@ -33,7 +42,7 @@ average_cpu=OrderedDict()
 # dictionary that holds all global options defined in the [global] section of
 # the template.ini file.
 global_options = {}
-# all the different filenames for each configuration generated
+# all the different filenames for each test case generated
 filenames=[]
 # block sizes and iodepth arrays
 bss = 0
@@ -45,10 +54,10 @@ vms = {}
 #    key = value
 # by this:
 #    key=value
-def remove_whitespace_from_assignments(config_path):
+def remove_whitespace_from_assignments(file_path):
     separator = "="
-    lines = file(config_path).readlines()
-    fp = open(config_path, "w")
+    lines = file(file_path).readlines()
+    fp = open(file_path, "w")
     for line in lines:
         line = line.strip()
         if not line.startswith("#") and separator in line:
@@ -97,8 +106,8 @@ def parse_lines(lines, opt):
             out_value=re.sub(r'KBs', '', out_value)
             return out_value
 
-# create a new configuration file in the format "out/000%d.ini" for each
-# configuration generated. Also appends the new filename to the array
+# create a new job file in the format "out/000%d.ini" for each
+# test-case generated. Also appends the new filename to the array
 # filenames, declares a new empty array in the dictionary of values and a new
 # empty array to average_XXX_dictionary.
 def create_one_job(bs, iodepth, rw, i):
@@ -110,15 +119,15 @@ def create_one_job(bs, iodepth, rw, i):
     global average_bw
     global average_lat
     global average_cpu
-    config = ConfigParser.RawConfigParser(allow_no_value=True)
-    config.add_section("global")
+    job_file = ConfigParser.RawConfigParser(allow_no_value=True)
+    job_file.add_section("global")
 
     # skip these options, we're gonna get them later
     for opt in global_options.keys():
         if opt == "bs" or opt == "iodepth" or \
             opt == "rw" or opt == "number_of_runs":
             continue
-        config.set("global", opt, global_options[opt])
+        job_file.set("global", opt, global_options[opt])
 
     if rw == "read":
         section = "B%sI%sR" % (bs, iodepth)
@@ -133,14 +142,14 @@ def create_one_job(bs, iodepth, rw, i):
         section = "B%sI%sW" % (bs, iodepth)
         op = "randwrite"
 
-    config.add_section(section)
-    config.set(section, "size", "%sk" % bs)
-    config.set(section, "iodepth", iodepth)
-    config.set(section, "rw", op)
+    job_file.add_section(section)
+    job_file.set(section, "size", "%sk" % bs)
+    job_file.set(section, "iodepth", iodepth)
+    job_file.set(section, "rw", op)
 
     filename = "out/%s.ini" % str(i).zfill(4)
-    with open(filename, 'wb') as configfile:
-        config.write(configfile)
+    with open(filename, 'wb') as job_filename:
+        job_file.write(job_filename)
     remove_whitespace_from_assignments(filename)
 
     # update filenames array
@@ -160,14 +169,14 @@ def create_one_job(bs, iodepth, rw, i):
 
 # open template.ini, grab all global options and transform the list of block
 # sizes and iodepths into interable arrays
-def parse_template(template):
-    print_verbose("V", "parsing template.ini")
+def parse_main_config(config_file):
+    print_verbose("V", "parsing config.ini")
     global global_options
     global bss
     global iodepths
 
     config = ConfigParser.RawConfigParser(allow_no_value=True)
-    config.read(template_file)
+    config.read(config_file)
     global_section = config.sections()[0]
     options = config.options(global_section)
     for option in options:
@@ -177,24 +186,24 @@ def parse_template(template):
     iodepths = global_options['iodepth'].split(' ')
 
 # open vms.ini and parse all configuration options for each vm declared
-def parse_vms(vms_file):
+def parse_vms(vms_config_file):
     print_verbose("V", "parsing vms.ini")
     global vms
 
     i=0
-    config = ConfigParser.RawConfigParser(allow_no_value=True)
-    config.read(vms_file)
-    for section in config.sections():
+    vms_file = ConfigParser.RawConfigParser(allow_no_value=True)
+    vms_file.read(vms_config_file)
+    for section in vms_file.sections():
         vms[section] = {}
-        options = config.options(section)
+        options = vms_file.options(section)
         vms[section]['id'] = i
         vms[section]['name'] = section
         for option in options:
-            vms[section][option] = config.get(section, option)
+            vms[section][option] = vms_file.get(section, option)
         i+=1
 
-def cleanup_old_config():
-    # clean up old config files if there's any
+def cleanup():
+    # clean up old job files files if there's any
     print_verbose("V", "cleaning up old configuration")
     print_verbose("V", "removing out/")
     shutil.rmtree("out/", ignore_errors=True)
@@ -396,13 +405,13 @@ def start_jobs(vm, nruns):
 
 def main():
     # parse command line options
-    global template_file
+    global config_file
     global vms_file
     global vms
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hv:t:", ["help", "vms=",
-            "template="])
+        opts, args = getopt.getopt(sys.argv[1:], "hv:c:", ["help", "vms=",
+            "config="])
     except getopt.error, msg:
         print msg
         print "for help use --help"
@@ -414,21 +423,21 @@ def main():
             return 0
         elif o in ("-v", "--vms"):
             vms_file=a
-        elif o in ("-t", "--template"):
-            template_file=a
+        elif o in ("-c", "--config"):
+            config_file=a
 
     #if nothing is set, go back to default
-    if template_file == None:
-        print_verbose("I", "No configuration given, using default template.ini")
-        template_file = "template.ini"
+    if config_file == None:
+        print_verbose("I", "No configuration given, using default config.ini")
+        config_file = "config.ini"
 
     if vms_file == None:
         print_verbose("I", "No configuration given, using default vms.ini")
         vms_file = "vms.ini"
 
-    parse_template(template_file)
+    parse_main_config(config_file)
     parse_vms(vms_file)
-    cleanup_old_config()
+    cleanup()
     create_all_jobs(bss, iodepths)
 
     for vm in vms:
