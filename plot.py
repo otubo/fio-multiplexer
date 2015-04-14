@@ -66,6 +66,29 @@ def parse_config(config_file):
                     global_options['rw'] == "randwrite"):
                 test_cases.append("B%sI%sW" % (bs, iodepth))
 
+def do_cpu_on_host_graph(results_file0, results_file1, label):
+    ordered_result0 = []
+    ordered_result1 = []
+
+    print_verbose("I", "drawing graphs for %s" % label)
+
+    # open and read both csv result files
+    reader = csv.reader(open(results_file0, 'rb'))
+    results0 = dict(x for x in reader)
+    reader = csv.reader(open(results_file1, 'rb'))
+    results1 = dict(x for x in reader)
+
+    # remove '[' and ']' from results and append to results Array
+    for i in range(0,len(results0)):
+        ordered_result0.append(float(results0[str(i)]))
+
+    for i in range(0,len(results1)):
+        ordered_result1.append(float(results1[str(i)]))
+
+    plt.plot(ordered_result0, 'r-', ordered_result1, 'b-')
+    plt.savefig("%s/%s.png" % (graphs_folder_name, label))
+    plt.close()
+
 def do_graph(results_file0, results_file1, label):
     global config_file
     global test_cases
@@ -115,6 +138,7 @@ def do_graph(results_file0, results_file1, label):
     autolabel(rects1)
     autolabel(rects2)
     plt.savefig("%s/%s.png" % (graphs_folder_name, label))
+    plt.close()
     #plt.show()
 
 def main():
@@ -157,15 +181,23 @@ def main():
 
     parse_config(config_file)
 
-    graphs_folder_name = "logs/%s__%s" % (folder0.replace("logs/", ""),
-            folder1.replace("logs/", ""))
-    shutil.rmtree(graphs_folder_name, ignore_errors=True)
+    if not os.path.isdir("graphs/"):
+        os.mkdir("graphs/")
+
+    graphs_folder_name = "graphs/%s" % timestamp
+
+    if os.path.isdir(graphs_folder_name):
+        shutil.rmtree(graphs_folder_name, ignore_errors=True)
+
     os.mkdir(graphs_folder_name)
+
 
     do_graph("%s/iops.csv" % folder0, "%s/iops.csv" % folder1, "iops")
     do_graph("%s/bw.csv" % folder0, "%s/bw.csv" % folder1, "bw")
     do_graph("%s/cpu.csv" % folder0, "%s/cpu.csv" % folder1, "cpu")
     do_graph("%s/lat.csv" % folder0, "%s/lat.csv" % folder1, "lat")
+    do_cpu_on_host_graph("%s/cpu_on_host.csv" % folder0, "%s/cpu_on_host.csv" % folder1, "cpu_on_host")
+    print_verbose("I", "results for these runs can be found at: %s" % graphs_folder_name)
 
     return 0
 

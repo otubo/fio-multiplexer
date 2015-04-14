@@ -220,6 +220,20 @@ def cleanup():
     print_verbose("V", "creating new out/")
     os.mkdir("out")
 
+def create_logs_dir(vm):
+    if int(vm['iothreads']) == 1:
+        result_folder_name = "logs/%s/%s_iothreads" % (timestamp, vm['name'])
+    else:
+        result_folder_name = "logs/%s/%s_virtio-blk" % (timestamp, vm['name'])
+
+    if not os.path.isdir("logs/"):
+        os.mkdir("logs")
+    if not os.path.isdir("logs/%s" % timestamp):
+        os.mkdir("logs/%s" % timestamp)
+    if not os.path.isdir(result_folder_name):
+        os.mkdir(result_folder_name)
+    vm['result_folder_name'] = result_folder_name
+
 def create_all_jobs(bss, iodepths):
     print_verbose("V", "creating all new job files inside out/")
     # create config files
@@ -243,7 +257,7 @@ def create_all_jobs(bss, iodepths):
 def spawn_virtual_machine(vm):
     print_verbose("I", "spawning new virtual machine id: %d" % vm['id'])
     return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'],
-        vm['external_disk'], vm['iothreads'], str(vm['id'])])
+        vm['external_disk'], vm['iothreads'], str(vm['id']), vm['result_folder_name']])
 
 def scp_job_files(vm):
     print_verbose("I", "copying all job files to virtual machine %d" % vm['id'])
@@ -392,28 +406,19 @@ def start_jobs(vm, nruns):
     # TODO: perhaps saving into chunks is better, imagine if, for some god forsaken
     # reason, the script breaks and all the previous iops are lost :/
     # XXX: too manu things duplicated
-    if int(vm['iothreads']) == 1:
-        result_folder_name = "logs/%s_%s_iothreads" % (timestamp, vm['name'])
-    else:
-        result_folder_name = "logs/%s_%s_virtio-blk" % (timestamp, vm['name'])
-
-    if not os.path.isdir("logs/"):
-        os.mkdir("logs")
-    os.mkdir(result_folder_name)
-
-    writer_iops = csv.writer(open('%s/iops.csv' % result_folder_name, 'wb'))
+    writer_iops = csv.writer(open('%s/iops.csv' % vm['result_folder_name'], 'wb'))
     for key, value in local_average_iops.items():
            writer_iops.writerow([key, value])
 
-    writer_bw = csv.writer(open('%s/bw.csv' % result_folder_name, 'wb'))
+    writer_bw = csv.writer(open('%s/bw.csv' % vm['result_folder_name'], 'wb'))
     for key, value in local_average_bw.items():
            writer_bw.writerow([key, value])
 
-    writer_lat = csv.writer(open('%s/lat.csv' % result_folder_name, 'wb'))
+    writer_lat = csv.writer(open('%s/lat.csv' % vm['result_folder_name'], 'wb'))
     for key, value in local_average_lat.items():
            writer_lat.writerow([key, value])
 
-    writer_cpu = csv.writer(open('%s/cpu.csv' % result_folder_name, 'wb'))
+    writer_cpu = csv.writer(open('%s/cpu.csv' % vm['result_folder_name'], 'wb'))
     for key, value in local_average_cpu.items():
            writer_cpu.writerow([key, value])
 
@@ -455,14 +460,20 @@ def main():
         print_verbose("I", "No configuration given, using default vms.ini")
         vms_file = "vms.ini"
 
-    print_verbose("W", "running in dummy mode!")
+    if dummy is True:
+        print_verbose("W", "running in dummy mode!")
+
     parse_main_config(config_file)
     parse_vms(vms_file)
     cleanup()
     create_all_jobs(bss, iodepths)
 
+    for vm in vms:
+        create_logs_dir(vms[vm])
+
     if dummy is not True:
         for vm in vms:
+            create_logs_dir(vms[vm])
             spawn_virtual_machine(vms[vm])
             scp_job_files(vms[vm])
             mount_testing_device(vms[vm])
@@ -470,6 +481,10 @@ def main():
     #everything is set, start `fio'
     for vm in vms:
         start_jobs(vms[vm], global_options['number_of_runs'])
+
+    print_verbose("I", "results for these runs can be found at:")
+    for vm in vms:
+        print_verbose("I", "vm: %s, results: %s" %(str(vms[vm]['name']), vms[vm]['result_folder_name']))
 
     return 0
 

@@ -9,6 +9,7 @@ EXTERNAL_DISK=$3
 IOTHREADS=$4
 NET_PORT=$((5000+$5))
 VNC_PORT=$(($5+1))
+FOLDER=$6
 
 if [ $IOTHREADS == "1" ]; then
     CONFIG_IOTHREADS="-object iothread,id=iothread0 -device virtio-blk-pci,id=image2,drive=drive_image2,x-data-plane=on,iothread=iothread0"
@@ -25,12 +26,20 @@ $QEMU_BIN \
     -netdev user,id=idsegdFJ,hostfwd=tcp::$NET_PORT-:22  \
     -drive format=raw,id=drive_image1,if=none,format=raw,file=$ROOTFS \
     -device virtio-blk-pci,id=image1,drive=drive_image1,bootindex=0,bus=pci.0,addr=04 \
-    ${CONFIG_IOTHREADS} \
     -drive id=drive_image2,if=none,cache.direct=on,format=raw,aio=native,file=$EXTERNAL_DISK \
+    ${CONFIG_IOTHREADS} \
     -m 1024  \
     -smp 2,maxcpus=10,cores=1,threads=1,sockets=2  \
     -cpu 'SandyBridge' \
     -rtc base=utc,clock=host,driftfix=none  \
     -boot order=d,menu=on \
-    -enable-kvm
+    -enable-kvm &
 
+PID=$!
+i=0
+while $(kill -0 $PID >/dev/null 2>&1); do
+    cpu_usage=$(top -b -d1 -n1 -p $PID|grep $PID|awk '{print $9}'|sed -e 's/,/\./g');
+    echo "${i},${cpu_usage}" >> $FOLDER/cpu_on_host.csv
+    i=$((i+1))
+    sleep 1;
+done

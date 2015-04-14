@@ -56,3 +56,4 @@ target/
 # fio-multiplexer specific
 out/
 logs/
+graphs/
