@@ -257,7 +257,7 @@ def create_all_jobs(bss, iodepths):
 def spawn_virtual_machine(vm):
     print_verbose("I", "spawning new virtual machine id: %d" % vm['id'])
     return subprocess.Popen(["./startvm.sh", vm['qemu_bin'], vm['rootfs'],
-        vm['external_disk'], vm['iothreads'], str(vm['id']), vm['result_folder_name']])
+        vm['external_disk'], vm['iothreads'], str(vm['id']), vm['result_folder_name'], vm['cpu_pinning']])
 
 def scp_job_files(vm):
     print_verbose("I", "copying all job files to virtual machine %d" % vm['id'])
@@ -467,9 +467,6 @@ def main():
     parse_vms(vms_file)
     cleanup()
     create_all_jobs(bss, iodepths)
-
-    for vm in vms:
-        create_logs_dir(vms[vm])
 
     if dummy is not True:
         for vm in vms:

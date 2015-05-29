@@ -10,6 +10,7 @@ IOTHREADS=$4
 NET_PORT=$((5000+$5))
 VNC_PORT=$(($5+1))
 FOLDER=$6
+CPU_PINNING=$7
 
 if [ $IOTHREADS == "1" ]; then
     CONFIG_IOTHREADS="-object iothread,id=iothread0 -device virtio-blk-pci,id=image2,drive=drive_image2,x-data-plane=on,iothread=iothread0"
@@ -36,6 +37,10 @@ $QEMU_BIN \
     -enable-kvm &
 
 PID=$!
+if [ $CPU_PINNING == "1" ]; then
+    taskset -cpa 0 $PID >/dev/null 2>&1;
+fi
+
 i=0
 while $(kill -0 $PID >/dev/null 2>&1); do
     cpu_usage=$(top -b -d1 -n1 -p $PID|grep $PID|awk '{print $9}'|sed -e 's/,/\./g');
