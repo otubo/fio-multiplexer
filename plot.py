@@ -78,12 +78,13 @@ def do_cpu_on_host_graph(results_file0, results_file1, label):
     reader = csv.reader(open(results_file1, 'rb'))
     results1 = dict(x for x in reader)
 
-    # remove '[' and ']' from results and append to results Array
     for i in range(0,len(results0)):
-        ordered_result0.append(float(results0[str(i)]))
+        if float(results0[str(i)]) < 110:
+            ordered_result0.append(float(results0[str(i)]))
 
     for i in range(0,len(results1)):
-        ordered_result1.append(float(results1[str(i)]))
+        if float(results1[str(i)]) < 110:
+            ordered_result1.append(float(results1[str(i)]))
 
     plt.plot(ordered_result0, 'r-', ordered_result1, 'b-')
     plt.savefig("%s/%s.png" % (graphs_folder_name, label))
